@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="theme-color"
+      content="#4285f4" />
+    <title>Voice Recorder</title>
+    <link
+      rel="manifest"
+      href="manifest.json" />
+    <link
+      rel="apple-touch-icon"
+      href="icons/icon-192x192.png" />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+          Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      }
+
+      body {
+        background-color: #f7f9fc;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+      }
+
+      .container {
+        width: 100%;
+        max-width: 500px;
+        background-color: #fff;
+        border-radius: 12px;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+        padding: 30px;
+        text-align: center;
+      }
+
+      h1 {
+        color: #4285f4;
+        margin-bottom: 30px;
+        font-size: 24px;
+      }
+
+      .recorder-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
+      }
+
+      .btn {
+        padding: 18px;
+        border-radius: 50%;
+        border: none;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.3s ease;
+        box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
+      }
+
+      .record-btn {
+        background-color: #fff;
+        width: 80px;
+        height: 80px;
+      }
+
+      .record-btn .mic-icon {
+        width: 40px;
+        height: 40px;
+        background-color: #ea4335;
+        border-radius: 50%;
+        transition: all 0.3s ease;
+      }
+
+      .record-btn.recording .mic-icon {
+        background-color: #34a853;
+        animation: pulse 1.5s infinite;
+      }
+
+      .play-btn {
+        background-color: #4285f4;
+        width: 60px;
+        height: 60px;
+        display: none;
+      }
+
+      .play-btn svg {
+        fill: white;
+        width: 24px;
+        height: 24px;
+      }
+
+      .timer {
+        font-size: 16px;
+        color: #5f6368;
+        margin-top: 10px;
+        font-weight: 500;
+        min-height: 24px;
+      }
+
+      .status {
+        color: #5f6368;
+        margin-top: 20px;
+        font-size: 14px;
+      }
+
+      .install-prompt {
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background-color: #4285f4;
+        color: white;
+        padding: 12px 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        display: none;
+        text-align: center;
+      }
+
+      .install-prompt button {
+        background-color: white;
+        color: #4285f4;
+        border: none;
+        border-radius: 4px;
+        padding: 8px 12px;
+        margin-left: 10px;
+        font-weight: bold;
+        cursor: pointer;
+      }
+
+      @keyframes pulse {
+        0% {
+          transform: scale(1);
+        }
+        50% {
+          transform: scale(1.1);
+        }
+        100% {
+          transform: scale(1);
+        }
+      }
+
+      /* iOS styling fixes */
+      button {
+        -webkit-appearance: none;
+        appearance: none;
+      }
+
+      @media (max-width: 480px) {
+        .container {
+          padding: 20px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Voice Recorder</h1>
+      <div class="recorder-container">
+        <button
+          id="recordButton"
+          class="btn record-btn">
+          <div class="mic-icon"></div>
+        </button>
+        <button
+          id="playButton"
+          class="btn play-btn">
+          <svg viewBox="0 0 24 24">
+            <path d="M8 5v14l11-7z" />
+          </svg>
+        </button>
+        <div
+          class="timer"
+          id="timer">
+          00:00
+        </div>
+        <div
+          class="status"
+          id="status">
+          Tap the button to start recording
+        </div>
+      </div>
+    </div>
+
+    <div
+      class="install-prompt"
+      id="installPrompt">
+      Add to Home Screen for the best experience
+      <button id="installButton">Install</button>
+    </div>
+
+    <script>
+      // Check if the browser supports the required APIs
+      const supportsMediaRecorder = 'MediaRecorder' in window;
+      const supportsAudioContext =
+        'AudioContext' in window || 'webkitAudioContext' in window;
+
+      if (!supportsMediaRecorder || !supportsAudioContext) {
+        alert(
+          'Your browser does not support audio recording. Please try a modern browser like Chrome, Firefox, or Safari.'
+        );
+      }
+
+      // DOM Elements
+      const recordButton = document.getElementById('recordButton');
+      const playButton = document.getElementById('playButton');
+      const timerDisplay = document.getElementById('timer');
+      const statusDisplay = document.getElementById('status');
+      const installPrompt = document.getElementById('installPrompt');
+      const installButton = document.getElementById('installButton');
+
+      // App state
+      let mediaRecorder;
+      let audioChunks = [];
+      let audioBlob;
+      let audioUrl;
+      let audio = new Audio();
+      let isRecording = false;
+      let timerInterval;
+      let startTime;
+      let deferredPrompt;
+
+      // Format time for the timer display (MM:SS)
+      function formatTime(seconds) {
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = Math.floor(seconds % 60);
+        return `${minutes.toString().padStart(2, '0')}:${remainingSeconds
+          .toString()
+          .padStart(2, '0')}`;
+      }
+
+      // Update timer display
+      function updateTimer() {
+        const elapsedTime = (Date.now() - startTime) / 1000;
+        timerDisplay.textContent = formatTime(elapsedTime);
+      }
+
+      // Start recording
+      async function startRecording() {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+          });
+
+          // Create a new MediaRecorder instance
+          mediaRecorder = new MediaRecorder(stream, {
+            mimeType: 'audio/mp4', // Use MP4 format for better iOS compatibility
+          });
+          audioChunks = [];
+
+          // Store audio data when available
+          mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+              audioChunks.push(event.data);
+            }
+          };
+
+          // Process the recorded audio when finished
+          mediaRecorder.onstop = () => {
+            // Create a blob from the audio chunks
+            audioBlob = new Blob(audioChunks, {type: 'audio/mp4'});
+
+            // Create a URL for the blob
+            if (audioUrl) {
+              URL.revokeObjectURL(audioUrl);
+            }
+            audioUrl = URL.createObjectURL(audioBlob);
+
+            // Create new Audio element for each playback
+            audio = new Audio(audioUrl);
+
+            // Enable play in background on iOS
+            audio.setAttribute('playsinline', '');
+            audio.setAttribute('webkit-playsinline', '');
+
+            // Show the play button and update status
+            playButton.style.display = 'flex';
+            statusDisplay.textContent = 'Recording saved. Tap play to listen.';
+
+            // Stop all tracks of the stream to release the microphone
+            stream.getTracks().forEach((track) => track.stop());
+          };
+
+          // Start recording
+          mediaRecorder.start();
+          isRecording = true;
+
+          // UI updates
+          recordButton.classList.add('recording');
+          startTime = Date.now();
+          timerInterval = setInterval(updateTimer, 1000);
+          statusDisplay.textContent = 'Recording...';
+        } catch (error) {
+          console.error('Error accessing microphone:', error);
+          statusDisplay.textContent =
+            'Could not access microphone. Please check permissions.';
+        }
+      }
+
+      // Stop recording
+      function stopRecording() {
+        if (mediaRecorder && isRecording) {
+          mediaRecorder.stop();
+          isRecording = false;
+
+          // UI updates
+          recordButton.classList.remove('recording');
+          clearInterval(timerInterval);
+          // Keep the last timer value displayed
+        }
+      }
+
+      // Toggle recording state
+      function toggleRecording() {
+        if (isRecording) {
+          stopRecording();
+        } else {
+          startRecording();
+        }
+      }
+
+      // Play recorded audio
+      function playRecording() {
+        if (audioUrl) {
+          // Create new Audio element for each playback
+          audio = new Audio(audioUrl);
+          audio.setAttribute('playsinline', '');
+          audio.setAttribute('webkit-playsinline', '');
+
+          // Play the audio
+          const playPromise = audio.play();
+          if (playPromise !== undefined) {
+            playPromise
+              .then(() => {
+                statusDisplay.textContent = 'Playing recording...';
+              })
+              .catch((error) => {
+                console.error('Playback failed:', error);
+                statusDisplay.textContent =
+                  'Playback failed. Please try again.';
+              });
+          }
+
+          audio.onended = () => {
+            statusDisplay.textContent = 'Recording playback completed.';
+          };
+        }
+      }
+
+      // Event listeners
+      recordButton.addEventListener('click', toggleRecording);
+      playButton.addEventListener('click', playRecording);
+
+      // Service Worker Registration for PWA
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker
+            .register('service-worker.js')
+            .then((registration) => {
+              console.log('ServiceWorker registration successful');
+            })
+            .catch((error) => {
+              console.log('ServiceWorker registration failed:', error);
+            });
+        });
+      }
+
+      // PWA Install Prompt
+      window.addEventListener('beforeinstallprompt', (e) => {
+        // Prevent the mini-infobar from appearing on mobile
+        e.preventDefault();
+        // Stash the event so it can be triggered later
+        deferredPrompt = e;
+        // Show the install button
+        installPrompt.style.display = 'block';
+      });
+
+      installButton.addEventListener('click', () => {
+        if (deferredPrompt) {
+          // Show the install prompt
+          deferredPrompt.prompt();
+
+          // Wait for the user to respond to the prompt
+          deferredPrompt.userChoice.then((choiceResult) => {
+            if (choiceResult.outcome === 'accepted') {
+              console.log('User accepted the install prompt');
+              installPrompt.style.display = 'none';
+            }
+            // Reset the deferred prompt variable
+            deferredPrompt = null;
+          });
+        }
+      });
+    </script>
+  </body>
+</html>
